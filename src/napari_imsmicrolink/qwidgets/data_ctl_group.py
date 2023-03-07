@@ -2,7 +2,6 @@ from qtpy.QtWidgets import QWidget, QSizePolicy, QTabWidget
 from superqt import QCollapsible
 from napari_imsmicrolink.qwidgets.subwidgets.ims_add_info import AddIMSWidget
 from napari_imsmicrolink.qwidgets.subwidgets.add_micro_info import AddMicroWidget
-from napari_imsmicrolink.qwidgets.subwidgets.add_meta_info import AddMetadataWidget
 
 
 class DataControl(QWidget):
@@ -14,10 +13,8 @@ class DataControl(QWidget):
         self.data_tabs = QTabWidget()
         self.ims_d = AddIMSWidget()
         self.micro_d = AddMicroWidget()
-        self.meta_d = AddMetadataWidget()
 
         self.data_tabs.addTab(self.ims_d, "IMS")
         self.data_tabs.addTab(self.micro_d, "Microscopy")
-        self.data_tabs.addTab(self.meta_d, "Metadata")
         self.data_frame.addWidget(self.data_tabs)
         self.data_frame.expand()

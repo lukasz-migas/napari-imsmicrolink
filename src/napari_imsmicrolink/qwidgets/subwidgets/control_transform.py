@@ -8,7 +8,6 @@ from qtpy.QtWidgets import (
     QFormLayout,
     QLabel,
     QComboBox,
-    QCheckBox,
 )
 
 
@@ -88,14 +87,13 @@ class CntrlTransform(QWidget):
         self.pt_table = PointTable()
 
         self.sub_area = QWidget()
-        self.sub_area.setLayout(QVBoxLayout())
+        self.sub_area.setLayout(QHBoxLayout())
 
         self.error_area = QWidget()
         self.error_area.setLayout(QFormLayout())
 
         self.run_transform = QPushButton("Visualize transformation")
         self.reset_transform = QPushButton("Reset transformation")
-        self.auto_update_transform = QCheckBox("Auto-visualise transformation")
 
         self.run_transform.setStyleSheet(
             "QPushButton:disabled{background-color:rgb(130, 82, 82);}"
@@ -113,12 +111,8 @@ class CntrlTransform(QWidget):
         self.error_area.layout().addRow(self.error_label, self.tform_error)
         self.error_area.layout().addRow(self.target_mod_label, self.target_mode_combo)
 
-        btn_layout = QHBoxLayout()
-        btn_layout.addWidget(self.run_transform, stretch=True)
-        btn_layout.addWidget(self.reset_transform)
-
-        self.sub_area.layout().addLayout(btn_layout)
-        self.sub_area.layout().addWidget(self.auto_update_transform, stretch=True)
+        self.sub_area.layout().addWidget(self.run_transform)
+        self.sub_area.layout().addWidget(self.reset_transform)
 
         self.layout().addWidget(self.pt_table)
         self.layout().addWidget(self.sub_area)
