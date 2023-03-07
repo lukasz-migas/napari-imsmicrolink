@@ -115,6 +115,7 @@ class IMSMicroLink(QWidget):
 
         # transform control
         self._tform_c.tform_ctl.reset_transform.clicked.connect(self.reset_transform)
+        self._tform_c.tform_ctl.clear_transform.clicked.connect(self.clear_transform)
         self._tform_c.tform_ctl.run_transform.clicked.connect(self.run_transformation)
         self._tform_c.tform_ctl.auto_update_transform.stateChanged.connect(self.autorun_transformation)
 
@@ -279,6 +280,7 @@ class IMSMicroLink(QWidget):
             name="IMS Pixel Map",
             scale=(ims_res, ims_res),
             colormap="viridis",
+            blending="additive",
         )
 
         self._add_ims_rois()
@@ -452,6 +454,7 @@ class IMSMicroLink(QWidget):
                 self.microscopy_image.base_layer_pixel_res,
             ),
             channel_axis=c_axis,
+            blending="additive",
         )
 
         self._update_output_spacing(self.microscopy_image.base_layer_pixel_res)
@@ -684,6 +687,7 @@ class IMSMicroLink(QWidget):
                 self.last_transform = deepcopy(
                     self.image_transformer.inverse_affine_np_mat_yx_um
                 )
+            print("Updated transformation")
 
     def reset_data(self) -> None:
         """Reset data."""
@@ -853,6 +857,9 @@ class IMSMicroLink(QWidget):
         )
         if path:
             path = path[0]
+        if path is None:
+            return
+
         if "-meta.json" not in path:
             warn(self, "Please select a valid metadata file.")
             return
@@ -865,13 +872,26 @@ class IMSMicroLink(QWidget):
 
         # extract file path information
         ims_files = meta.get("Pixel Map Datasets Files")
+        # the ims data was not present in the file so perhaps its not the right file
+        if ims_files is None:
+            return
         ims_files = [Path(f) for f in ims_files if Path(f).exists()]
         ims_spatial_res = meta.get("IMS spatial resolution")
         ims_pixel_map_pos = meta.get("IMS pixel map points (xy, microns)")
+        padding = meta.get("padding")
         if ims_files:
             self.read_ims_data(ims_files)
+
             # add pixel positions
             self._data.ims_d.res_info_input.setText(str(ims_spatial_res))
+
+            # setup padding of the IMS data
+            self._ims_c.ims_ctl.pixel_check.setChecked(True)  # we want to set values in pixels
+            self._ims_c.ims_ctl.pad_left.setText(str(padding["x_left_padding (px)"]))
+            self._ims_c.ims_ctl.pad_right.setText(str(padding["x_right_padding (px)"]))
+            self._ims_c.ims_ctl.pad_top.setText(str(padding["y_top_padding (px)"]))
+            self._ims_c.ims_ctl.pad_bottom.setText(str(padding["y_bottom_padding (px)"]))
+            self._pad_ims_canvas()
 
         microscopy_file = meta.get("PostIMS microscopy image")
         microscopy_file = Path(microscopy_file)
@@ -1065,6 +1085,16 @@ class IMSMicroLink(QWidget):
             self._update_output_size()
 
         return
+
+    def clear_transform(self):
+        """Clear transformation fiducial markers."""
+        from napari_imsmicrolink.utils.qt import confirm
+
+        if not confirm(self, "Are you sure you want to remove all fiducial markers from the table and canvas?"):
+            return
+        self.viewer.layers["IMS Fiducials"].data = np.empty((0, 2))
+        self.viewer.layers["Microscopy Fiducials"].data = np.empty((0, 2))
+
 
     def reset_transform(self) -> None:
         target_tform_modality = self._tform_c.tform_ctl.target_mode_combo.currentText()

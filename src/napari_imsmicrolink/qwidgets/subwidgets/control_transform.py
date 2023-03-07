@@ -93,14 +93,18 @@ class CntrlTransform(QWidget):
         self.error_area = QWidget()
         self.error_area.setLayout(QFormLayout())
 
-        self.run_transform = QPushButton("Visualize transformation")
-        self.reset_transform = QPushButton("Reset transformation")
+        self.run_transform = QPushButton("Visualize")
+        self.run_transform.setToolTip("Apply transformation to the image data.")
+        self.reset_transform = QPushButton("Reset")
+        self.reset_transform.setToolTip("Reset transformation data.")
+        self.clear_transform = QPushButton("Clear")
+        self.clear_transform.setToolTip("Remove all fiducial markers from the canvas.")
+
         self.auto_update_transform = QCheckBox("Auto-visualise transformation")
 
         self.run_transform.setStyleSheet(
             "QPushButton:disabled{background-color:rgb(130, 82, 82);}"
         )
-        self.run_transform.setMaximumWidth(140)
 
         self.error_label = QLabel("Transformation error (μm):")
         self.tform_error = QLabel("")
@@ -114,8 +118,9 @@ class CntrlTransform(QWidget):
         self.error_area.layout().addRow(self.target_mod_label, self.target_mode_combo)
 
         btn_layout = QHBoxLayout()
-        btn_layout.addWidget(self.run_transform, stretch=True)
+        btn_layout.addWidget(self.run_transform)
         btn_layout.addWidget(self.reset_transform)
+        btn_layout.addWidget(self.clear_transform)
 
         self.sub_area.layout().addLayout(btn_layout)
         self.sub_area.layout().addWidget(self.auto_update_transform, stretch=True)
