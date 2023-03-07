@@ -2,6 +2,7 @@ from typing import List, Tuple, Optional, Union
 from copy import deepcopy
 from pathlib import Path
 import json
+from contextlib import suppress
 
 import numpy as np
 import pandas as pd
@@ -66,6 +67,10 @@ class IMSMicroLink(QWidget):
         """
         super().__init__()
         self.viewer = napari_viewer
+
+        # cache
+        self._temp_cache = None
+
         # data classes
         self.ims_pixel_map: Optional[PixelMapIMS] = None
         self.microscopy_image: Optional[MicroRegImage] = None
@@ -97,6 +102,7 @@ class IMSMicroLink(QWidget):
         self._data.ims_d.add_ims_data.clicked.connect(self.read_ims_data)
         self._data.ims_d.delete_btn.clicked.connect(self._delete_ims_roi)
         self._data.micro_d.add_micro_data.clicked.connect(self.read_micro_data)
+        self._data.meta_d.add_meta_data.clicked.connect(self.read_meta)
 
         # ims canvas control
         self._ims_c.ims_ctl.do_padding_btn.clicked.connect(self._pad_ims_canvas)
@@ -110,6 +116,8 @@ class IMSMicroLink(QWidget):
         # transform control
         self._tform_c.tform_ctl.reset_transform.clicked.connect(self.reset_transform)
         self._tform_c.tform_ctl.run_transform.clicked.connect(self.run_transformation)
+        self._tform_c.tform_ctl.auto_update_transform.stateChanged.connect(self.autorun_transformation)
+
         self._tform_c.rot_ctl.rot_mi_90cw.clicked.connect(
             lambda: self._rotate_modality("microscopy", -90)
         )
@@ -199,6 +207,9 @@ class IMSMicroLink(QWidget):
         )
 
         self.viewer.layers["IMS Fiducials"].events.data.connect(self._get_target_pts)
+        # if auto-update is enabled, make sure that updates are propegated
+        if self._tform_c.tform_ctl.auto_update_transform.isChecked():
+            self.viewer.layers["IMS Fiducials"].events.data.connect(self.run_transformation)
 
     def _generate_ims_rois(self, map_type="minimized"):
         if map_type == "minimized":
@@ -301,6 +312,13 @@ class IMSMicroLink(QWidget):
         self.viewer.layers["Microscopy Fiducials"].events.data.connect(
             self._get_source_pts
         )
+        if self._temp_cache:
+            self.viewer.layers["Microscopy Fiducials"].data = self._temp_cache["points"]
+            self._temp_cache = None 
+
+        # if auto-update is enabled, make sure that updates are propegated
+        if self._tform_c.tform_ctl.auto_update_transform.isChecked():
+            self.viewer.layers["Microscopy Fiducials"].events.data.connect(self.run_transformation)
 
     def _get_point_props(self, pt_data) -> dict:
         n_pts = pt_data.shape[0]
@@ -449,7 +467,7 @@ class IMSMicroLink(QWidget):
         self._add_micro_fiducials()
         self.viewer.reset_view()
 
-    def read_micro_data(self, file_path: Optional[str] = None) -> None:
+    def read_micro_data(self, file_path: Optional[Union[str, Path]] = None) -> None:
         if not file_path:
             file_path = open_file_dialog(
                 self,
@@ -620,8 +638,21 @@ class IMSMicroLink(QWidget):
 
         # self.viewer.reset_view()
 
-    def run_transformation(self) -> None:
+    def autorun_transformation(self, state: bool):
+        """Automatically run the transformation when the user changs values in the table."""
+        if state:
+            with suppress(IndexError, KeyError):
+                self.viewer.layers["IMS Fiducials"].events.data.connect(self.run_transformation)
+            with suppress(IndexError, KeyError):
+                self.viewer.layers["Microscopy Fiducials"].events.data.connect(self.run_transformation)
+        else:
+            with suppress(IndexError, KeyError):
+                self.viewer.layers["IMS Fiducials"].events.data.disconnect(self.run_transformation)
+            with suppress(IndexError, KeyError):
+                self.viewer.layers["Microscopy Fiducials"].events.data.disconnect(self.run_transformation)
 
+
+    def run_transformation(self) -> None:
         if (
             np.array_equal(
                 self.last_transform, self.image_transformer.inverse_affine_np_mat_yx_um
@@ -655,6 +686,13 @@ class IMSMicroLink(QWidget):
                 )
 
     def reset_data(self) -> None:
+        """Reset data."""
+        from napari_imsmicrolink.utils.qt import confirm
+
+        if not confirm(self, "Are you sure you want to delete all data? This action cannot be undone."):
+            return
+
+        
         while len(self.viewer.layers) > 0:
             self.viewer.layers.pop(0)
 
@@ -801,6 +839,60 @@ class IMSMicroLink(QWidget):
         self._add_shape_names_combo(shape_names)
         # self._remove_ims_roi_in_viewer(roi_name)
         self._pad_shapes()
+
+    def read_meta(self):
+        """Read metadata from file."""
+        from napari_imsmicrolink.utils.qt import warn
+
+        path = open_file_dialog(
+            self,
+            single=False,
+            wd="",
+            name="Open transformation file",
+            file_types="All Files (*);;JSON (*.json)",
+        )
+        if path:
+            path = path[0]
+        if "-meta.json" not in path:
+            warn(self, "Please select a valid metadata file.")
+            return
+        self._read_meta(path)
+
+    def _read_meta(self, path: str):
+        """Read metadata from file."""
+        with open(path, "r") as f:
+            meta = json.load(f)
+
+        # extract file path information
+        ims_files = meta.get("Pixel Map Datasets Files")
+        ims_files = [Path(f) for f in ims_files if Path(f).exists()]
+        ims_spatial_res = meta.get("IMS spatial resolution")
+        ims_pixel_map_pos = meta.get("IMS pixel map points (xy, microns)")
+        if ims_files:
+            self.read_ims_data(ims_files)
+            # add pixel positions
+            self._data.ims_d.res_info_input.setText(str(ims_spatial_res))
+
+        microscopy_file = meta.get("PostIMS microscopy image")
+        microscopy_file = Path(microscopy_file)
+        micro_spatial_res = meta.get("Microscopy spatial resolution")
+        micro_pixel_map_pos = meta.get("PAQ microscopy points (xy, microns)")
+        if microscopy_file.exists():
+            self.read_micro_data(microscopy_file)
+            # add pixel positions
+            self._data.micro_d.res_info_input.setText(str(micro_spatial_res))
+
+        # IMS data is loaded in the main thread so we can add the points directly
+        if "IMS Fiducials" in self.viewer.layers:        
+            self.viewer.layers["IMS Fiducials"].data = np.asarray(ims_pixel_map_pos)
+        if "Microscopy Fiducials" in self.viewer.layers:
+            self.viewer.layers["Microscopy Fiducials"].data = np.asarray(micro_pixel_map_pos)
+        else:
+            self._temp_cache = {"points": np.asarray(micro_pixel_map_pos)}
+
+        target_output_size_px = meta.get("Target output image size (xy, pixels)")
+        target_output_image_spacing_um = meta.get("Target output image spacing (xy, um)")
+        
 
     @thread_worker
     def _write_data(
